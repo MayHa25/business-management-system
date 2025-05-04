@@ -1,52 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+
 import { ShoppingCart, Plus, Pencil, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { DUMMY_ORDERS, Order } from "@/lib/constants";
+import { Order } from "@/lib/constants";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>(DUMMY_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "processing" | "completed">("all");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
-  
-  const filteredOrders = orders.filter(order => {
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      setUserId(user.uid);
+
+      const q = query(collection(db, "orders"), where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as Order[];
+      setOrders(data);
+
+      const clientQ = query(collection(db, "clients"), where("userId", "==", user.uid));
+      const clientSnapshot = await getDocs(clientQ);
+      const clientData = clientSnapshot.docs.map((doc) => ({ id: doc.id, name: doc.data().name }));
+      setClients(clientData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const filteredOrders = orders.filter((order) => {
     if (filterStatus === "all") return true;
     return order.status === filterStatus;
   });
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(amount);
+    return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(amount);
   };
 
-  const handleDelete = (order: Order) => {
-    setOrders(orders.filter(o => o.id !== order.id));
-    toast({
-      title: "הזמנה נמחקה בהצלחה",
-      description: `הזמנה ${order.orderNumber} הוסרה מהרשימה`,
-    });
+  const handleDelete = async (order: Order) => {
+    await deleteDoc(doc(db, "orders", order.id));
+    setOrders(orders.filter((o) => o.id !== order.id));
+    toast({ title: "הזמנה נמחקה", description: `הזמנה ${order.orderNumber} הוסרה.` });
   };
 
   const handleEdit = (order: Order) => {
@@ -54,81 +86,56 @@ export default function OrdersPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = (formData: any) => {
+  const handleSave = async (formData: any) => {
+    if (!userId) return;
+
     if (selectedOrder) {
-      // Edit existing order
-      setOrders(orders.map(order => 
-        order.id === selectedOrder.id 
-          ? { ...order, ...formData }
-          : order
-      ));
-      toast({
-        title: "הזמנה עודכנה בהצלחה",
-        description: `פרטי ההזמנה ${formData.orderNumber} עודכנו`,
-      });
+      const ref = doc(db, "orders", selectedOrder.id);
+      await updateDoc(ref, { ...formData, userId });
+      setOrders(orders.map((o) => (o.id === selectedOrder.id ? { ...o, ...formData } : o)));
+      toast({ title: "הזמנה עודכנה", description: `הזמנה ${formData.orderNumber} עודכנה.` });
     } else {
-      // Add new order
-      const newOrder: Order = {
-        id: Math.random().toString(36).substr(2, 9),
-        orderNumber: `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
+      const newOrder: Omit<Order, "id"> = {
+        orderNumber: `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
+        userId,
         ...formData,
       };
-      setOrders([...orders, newOrder]);
-      toast({
-        title: "הזמנה נוספה בהצלחה",
-        description: `הזמנה ${newOrder.orderNumber} נוספה לרשימה`,
-      });
+      const docRef = await addDoc(collection(db, "orders"), newOrder);
+      setOrders([...orders, { id: docRef.id, ...newOrder }]);
+      toast({ title: "הזמנה נוספה", description: `הזמנה ${newOrder.orderNumber} נוספה.` });
     }
+
     setIsDialogOpen(false);
     setSelectedOrder(null);
   };
 
-  const getStatusBadge = (status: Order['status']) => {
+  const getStatusBadge = (status: Order["status"]) => {
     switch (status) {
-      case 'pending':
-        return <Badge variant="outline">ממתינה</Badge>;
-      case 'processing':
-        return <Badge variant="secondary">בטיפול</Badge>;
-      case 'completed':
-        return <Badge variant="default">הושלמה</Badge>;
-      default:
-        return null;
+      case "pending": return <Badge variant="outline">ממתינה</Badge>;
+      case "processing": return <Badge variant="secondary">בטיפול</Badge>;
+      case "completed": return <Badge variant="default">הושלמה</Badge>;
+      default: return null;
     }
   };
 
   const columns = [
+    { header: "מספר הזמנה", accessorKey: "orderNumber" as keyof Order },
+    { header: "לקוח", accessorKey: "client" as keyof Order },
+    { header: "תאריך הזמנה", accessorKey: "orderDate" as keyof Order },
     {
-      header: "מספר הזמנה",
-      accessorKey: "orderNumber" as keyof Order,
-    },
-    {
-      header: "לקוח",
-      accessorKey: "client" as keyof Order,
-    },
-    {
-      header: "תאריך הזמנה",
-      accessorKey: "orderDate" as keyof Order,
-    },
-    {
-      header: "סכום סופי",
-      accessorKey: "totalAmount" as keyof Order,
+      header: "סכום סופי", accessorKey: "totalAmount" as keyof Order,
       cell: (order: Order) => formatCurrency(order.totalAmount),
     },
     {
-      header: "סטטוס",
-      accessorKey: "status" as keyof Order,
+      header: "סטטוס", accessorKey: "status" as keyof Order,
       cell: (order: Order) => getStatusBadge(order.status),
     },
   ];
 
   const actionColumn = (order: Order) => (
     <div className="flex space-x-2 justify-end">
-      <Button variant="ghost" size="icon" onClick={() => handleEdit(order)}>
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Button variant="ghost" size="icon" onClick={() => handleDelete(order)}>
-        <Trash className="h-4 w-4" />
-      </Button>
+      <Button variant="ghost" size="icon" onClick={() => handleEdit(order)}><Pencil className="h-4 w-4" /></Button>
+      <Button variant="ghost" size="icon" onClick={() => handleDelete(order)}><Trash className="h-4 w-4" /></Button>
     </div>
   );
 
@@ -163,43 +170,26 @@ export default function OrdersPage() {
                 <div className="grid gap-2">
                   <Label htmlFor="client">לקוח</Label>
                   <Select name="client" defaultValue={selectedOrder?.client}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="בחר לקוח" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="בחר לקוח" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ישראל ישראלי">ישראל ישראלי</SelectItem>
-                      <SelectItem value="מיכל לוי">מיכל לוי</SelectItem>
-                      <SelectItem value="דוד כהן">דוד כהן</SelectItem>
-                      <SelectItem value="רות אברהם">רות אברהם</SelectItem>
-                      <SelectItem value="יוסף אלוני">יוסף אלוני</SelectItem>
+                      {clients.map(client => (
+                        <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="orderDate">תאריך הזמנה</Label>
-                  <Input 
-                    id="orderDate" 
-                    name="orderDate"
-                    type="date"
-                    defaultValue={selectedOrder?.orderDate}
-                  />
+                  <Input id="orderDate" name="orderDate" type="date" defaultValue={selectedOrder?.orderDate} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="totalAmount">סכום סופי</Label>
-                  <Input 
-                    id="totalAmount" 
-                    name="totalAmount"
-                    type="number"
-                    defaultValue={selectedOrder?.totalAmount}
-                    placeholder="הזן סכום" 
-                  />
+                  <Input id="totalAmount" name="totalAmount" type="number" defaultValue={selectedOrder?.totalAmount} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="status">סטטוס</Label>
                   <Select name="status" defaultValue={selectedOrder?.status}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="בחר סטטוס" />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue placeholder="בחר סטטוס" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">ממתינה</SelectItem>
                       <SelectItem value="processing">בטיפול</SelectItem>
@@ -225,44 +215,16 @@ export default function OrdersPage() {
           <TabsTrigger value="completed">הושלמו</TabsTrigger>
         </TabsList>
         <TabsContent value="all">
-          <DataTable 
-            data={filteredOrders} 
-            columns={columns} 
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["orderNumber", "client"]}
-            emptyMessage="לא נמצאו הזמנות"
-          />
+          <DataTable data={filteredOrders} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["orderNumber", "client"]} emptyMessage="לא נמצאו הזמנות" />
         </TabsContent>
         <TabsContent value="pending">
-          <DataTable 
-            data={filteredOrders} 
-            columns={columns} 
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["orderNumber", "client"]}
-            emptyMessage="לא נמצאו הזמנות ממתינות"
-          />
+          <DataTable data={filteredOrders} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["orderNumber", "client"]} emptyMessage="לא נמצאו הזמנות ממתינות" />
         </TabsContent>
         <TabsContent value="processing">
-          <DataTable 
-            data={filteredOrders} 
-            columns={columns} 
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["orderNumber", "client"]}
-            emptyMessage="לא נמצאו הזמנות בטיפול"
-          />
+          <DataTable data={filteredOrders} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["orderNumber", "client"]} emptyMessage="לא נמצאו הזמנות בטיפול" />
         </TabsContent>
         <TabsContent value="completed">
-          <DataTable 
-            data={filteredOrders} 
-            columns={columns} 
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["orderNumber", "client"]}
-            emptyMessage="לא נמצאו הזמנות שהושלמו"
-          />
+          <DataTable data={filteredOrders} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["orderNumber", "client"]} emptyMessage="לא נמצאו הזמנות שהושלמו" />
         </TabsContent>
       </Tabs>
     </div>

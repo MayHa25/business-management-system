@@ -1,39 +1,66 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { db, auth } from "@/lib/firebase";
 import { Package, Plus, Pencil, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { DUMMY_INVENTORY, InventoryItem } from "@/lib/constants";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
+import { InventoryItem } from "@/lib/constants";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 export default function InventoryPage() {
-  const [inventory, setInventory] = useState<InventoryItem[]>(DUMMY_INVENTORY);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
-  
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      setUserId(user.uid);
+
+      const q = query(collection(db, "inventory"), where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryItem[];
+      setInventory(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const categories = Array.from(new Set(inventory.map(item => item.category)));
-  
-  const filteredInventory = filterCategory 
+
+  const filteredInventory = filterCategory
     ? inventory.filter(item => item.category === filterCategory)
     : inventory;
 
@@ -41,7 +68,8 @@ export default function InventoryPage() {
     return new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(amount);
   };
 
-  const handleDelete = (item: InventoryItem) => {
+  const handleDelete = async (item: InventoryItem) => {
+    await deleteDoc(doc(db, "inventory", item.id));
     setInventory(inventory.filter(i => i.id !== item.id));
     toast({
       title: "פריט נמחק בהצלחה",
@@ -54,25 +82,26 @@ export default function InventoryPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = (formData: any) => {
+  const handleSave = async (formData: any) => {
+    if (!userId) return;
+
     if (selectedItem) {
-      // Edit existing item
-      setInventory(inventory.map(item => 
-        item.id === selectedItem.id 
-          ? { ...item, ...formData }
-          : item
+      const ref = doc(db, "inventory", selectedItem.id);
+      await updateDoc(ref, { ...formData, userId });
+      setInventory(inventory.map(item =>
+        item.id === selectedItem.id ? { ...item, ...formData } : item
       ));
       toast({
         title: "פריט עודכן בהצלחה",
         description: `הפרטים של ${formData.name} עודכנו`,
       });
     } else {
-      // Add new item
-      const newItem: InventoryItem = {
-        id: Math.random().toString(36).substr(2, 9),
+      const newItem: Omit<InventoryItem, "id"> = {
         ...formData,
+        userId,
       };
-      setInventory([...inventory, newItem]);
+      const docRef = await addDoc(collection(db, "inventory"), newItem);
+      setInventory([...inventory, { id: docRef.id, ...newItem }]);
       toast({
         title: "פריט נוסף בהצלחה",
         description: `${formData.name} נוסף למלאי`,
@@ -156,50 +185,23 @@ export default function InventoryPage() {
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">שם פריט</Label>
-                  <Input 
-                    id="name" 
-                    name="name"
-                    defaultValue={selectedItem?.name}
-                    placeholder="הזן שם פריט" 
-                  />
+                  <Input id="name" name="name" defaultValue={selectedItem?.name} placeholder="הזן שם פריט" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="category">קטגוריה</Label>
-                  <Input 
-                    id="category" 
-                    name="category"
-                    defaultValue={selectedItem?.category}
-                    placeholder="הזן קטגוריה" 
-                  />
+                  <Input id="category" name="category" defaultValue={selectedItem?.category} placeholder="הזן קטגוריה" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="quantity">כמות</Label>
-                  <Input 
-                    id="quantity" 
-                    name="quantity"
-                    type="number"
-                    defaultValue={selectedItem?.quantity}
-                    placeholder="הזן כמות" 
-                  />
+                  <Input id="quantity" name="quantity" type="number" defaultValue={selectedItem?.quantity} placeholder="הזן כמות" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="unitPrice">מחיר ליחידה</Label>
-                  <Input 
-                    id="unitPrice" 
-                    name="unitPrice"
-                    type="number"
-                    defaultValue={selectedItem?.unitPrice}
-                    placeholder="הזן מחיר" 
-                  />
+                  <Input id="unitPrice" name="unitPrice" type="number" defaultValue={selectedItem?.unitPrice} placeholder="הזן מחיר" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="supplier">ספק</Label>
-                  <Input 
-                    id="supplier" 
-                    name="supplier"
-                    defaultValue={selectedItem?.supplier}
-                    placeholder="הזן ספק" 
-                  />
+                  <Input id="supplier" name="supplier" defaultValue={selectedItem?.supplier} placeholder="הזן ספק" />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
