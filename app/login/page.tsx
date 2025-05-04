@@ -6,8 +6,9 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { signInWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +37,27 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
+      const userCredential = await signInWithEmailAndPassword(
+        auth,
+        data.email,
+        data.password
+      );
+
+      const user = userCredential.user;
+
+      // שלב האישור מול Firestore
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists() || !userSnap.data().approved) {
+        toast({
+          variant: "destructive",
+          title: "גישה נדחתה",
+          description: "המשתמש לא אושר על ידי המנהלת",
+        });
+        await signOut(auth);
+        return;
+      }
 
       toast({
         title: "התחברת בהצלחה",
@@ -101,8 +122,8 @@ export default function LoginPage() {
 
         <div className="text-center text-sm">
           <span className="text-gray-600">אין לך חשבון? </span>
-          <Link href="/register" className="text-[#0b3d2e] hover:underline">
-            הירשם כאן
+          <Link href="/login" className="text-[#0b3d2e] hover:underline">
+            התחבר דרך מנהלת בלבד
           </Link>
         </div>
       </div>
