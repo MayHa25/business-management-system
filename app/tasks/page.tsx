@@ -1,36 +1,59 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ClipboardList, Plus, Check, Trash, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { DUMMY_TASKS, Task } from "@/lib/constants";
+import { Task } from "@/lib/constants";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
+import { db } from "@/lib/firebase";
+import { getAuth } from "firebase/auth";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
+
 export default function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>(DUMMY_TASKS);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "closed">("all");
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const { toast } = useToast();
-  
+
+  const auth = getAuth();
+  const user = auth.currentUser;
+
+  useEffect(() => {
+    async function fetchTasks() {
+      if (!user) return;
+      const q = query(collection(db, "tasks"), where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
+      const tasksFromDB = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
+      setTasks(tasksFromDB);
+    }
+
+    fetchTasks();
+  }, [user]);
+
   const filteredTasks = tasks.filter(task => {
     if (filterStatus === "all") return true;
     return filterStatus === "open" ? task.status === "open" : task.status === "closed";
   });
 
-  const handleDelete = (task: Task) => {
+  const handleDelete = async (task: Task) => {
+    await deleteDoc(doc(db, "tasks", task.id));
     setTasks(tasks.filter(t => t.id !== task.id));
     toast({
       title: "משימה נמחקה בהצלחה",
@@ -43,39 +66,57 @@ export default function TasksPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = (formData: any) => {
+  const handleSave = async (formData: any) => {
+    if (!user) {
+      toast({ title: "שגיאה", description: "אין משתמש מחובר", variant: "destructive" });
+      return;
+    }
+
     if (selectedTask) {
-      // Edit existing task
-      setTasks(tasks.map(task => 
-        task.id === selectedTask.id 
+      // עריכת משימה קיימת
+      await updateDoc(doc(db, "tasks", selectedTask.id), {
+        ...formData,
+        status: selectedTask.status,
+      });
+
+      setTasks(tasks.map(task =>
+        task.id === selectedTask.id
           ? { ...task, ...formData }
           : task
       ));
+
       toast({
         title: "משימה עודכנה בהצלחה",
         description: `הפרטים של ${formData.name} עודכנו`,
       });
     } else {
-      // Add new task
-      const newTask: Task = {
-        id: Math.random().toString(36).substr(2, 9),
-        status: 'open',
+      // יצירת משימה חדשה
+      const docRef = await addDoc(collection(db, "tasks"), {
         ...formData,
-      };
-      setTasks([...tasks, newTask]);
+        status: 'open',
+        userId: user.uid,
+      });
+
+      setTasks([...tasks, { id: docRef.id, ...formData, status: 'open' }]);
+
       toast({
         title: "משימה נוספה בהצלחה",
         description: `${formData.name} נוספה לרשימת המשימות`,
       });
     }
+
     setIsDialogOpen(false);
     setSelectedTask(null);
   };
 
-  const markTaskAs = (id: string, status: 'open' | 'closed') => {
-    setTasks(tasks.map(task => 
+  const markTaskAs = async (id: string, status: 'open' | 'closed') => {
+    const taskRef = doc(db, "tasks", id);
+    await updateDoc(taskRef, { status });
+
+    setTasks(tasks.map(task =>
       task.id === id ? { ...task, status } : task
     ));
+
     toast({
       title: `משימה ${status === 'closed' ? 'הושלמה' : 'נפתחה מחדש'} בהצלחה`,
     });
@@ -112,6 +153,9 @@ export default function TasksPage() {
           <X className="h-4 w-4 text-red-600" />
         </Button>
       )}
+      <Button variant="ghost" size="icon" onClick={() => handleEdit(task)}>
+        <ClipboardList className="h-4 w-4" />
+      </Button>
       <Button variant="ghost" size="icon" onClick={() => handleDelete(task)}>
         <Trash className="h-4 w-4" />
       </Button>
@@ -146,17 +190,17 @@ export default function TasksPage() {
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">שם משימה</Label>
-                  <Input 
-                    id="name" 
+                  <Input
+                    id="name"
                     name="name"
                     defaultValue={selectedTask?.name}
-                    placeholder="הזן שם משימה" 
+                    placeholder="הזן שם משימה"
                   />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="dueDate">תאריך יעד</Label>
-                  <Input 
-                    id="dueDate" 
+                  <Input
+                    id="dueDate"
                     name="dueDate"
                     type="date"
                     defaultValue={selectedTask?.dueDate}
@@ -179,9 +223,9 @@ export default function TasksPage() {
           <TabsTrigger value="closed">סגורות</TabsTrigger>
         </TabsList>
         <TabsContent value="all">
-          <DataTable 
-            data={filteredTasks} 
-            columns={columns} 
+          <DataTable
+            data={filteredTasks}
+            columns={columns}
             actionColumn={actionColumn}
             searchable={true}
             searchKeys={["name"]}
@@ -189,9 +233,9 @@ export default function TasksPage() {
           />
         </TabsContent>
         <TabsContent value="open">
-          <DataTable 
-            data={filteredTasks} 
-            columns={columns} 
+          <DataTable
+            data={filteredTasks}
+            columns={columns}
             actionColumn={actionColumn}
             searchable={true}
             searchKeys={["name"]}
@@ -199,9 +243,9 @@ export default function TasksPage() {
           />
         </TabsContent>
         <TabsContent value="closed">
-          <DataTable 
-            data={filteredTasks} 
-            columns={columns} 
+          <DataTable
+            data={filteredTasks}
+            columns={columns}
             actionColumn={actionColumn}
             searchable={true}
             searchKeys={["name"]}
