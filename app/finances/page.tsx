@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   collection,
   getDocs,
@@ -54,39 +54,27 @@ export default function FinancesPage() {
 
       const q = query(collection(db, "finances"), where("userId", "==", user.uid));
       const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as FinancialTransaction[];
+      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FinancialTransaction[];
       setTransactions(data);
     });
+
     return () => unsubscribe();
   }, []);
 
-  const filteredTransactions = transactions.filter((transaction) => {
+  const filteredTransactions = transactions.filter(transaction => {
     if (filterType === "all") return true;
     return transaction.type === filterType;
   });
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("he-IL", {
-      style: "currency",
-      currency: "ILS",
-    }).format(amount);
+    return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(amount);
   };
 
   const handleDelete = async (transaction: FinancialTransaction) => {
+    if (!transaction.id) return;
     await deleteDoc(doc(db, "finances", transaction.id));
-    setTransactions(transactions.filter((t) => t.id !== transaction.id));
-    toast({
-      title: "תנועה נמחקה בהצלחה",
-      description: `התנועה הוסרה מהרשימה`,
-    });
-  };
-
-  const handleEdit = (transaction: FinancialTransaction) => {
-    setSelectedTransaction(transaction);
-    setIsDialogOpen(true);
+    setTransactions(transactions.filter(t => t.id !== transaction.id));
+    toast({ title: "תנועה נמחקה בהצלחה", description: "התנועה הוסרה מהרשימה" });
   };
 
   const handleSave = async (formData: any) => {
@@ -98,28 +86,19 @@ export default function FinancesPage() {
         ...formData,
         userId,
       });
-      setTransactions(
-        transactions.map((t) =>
-          t.id === selectedTransaction.id ? { ...t, ...formData } : t
-        )
-      );
-      toast({
-        title: "תנועה עודכנה בהצלחה",
-        description: `פרטי התנועה עודכנו`,
-      });
+      setTransactions(transactions.map(transaction =>
+        transaction.id === selectedTransaction.id ? { ...transaction, ...formData } : transaction
+      ));
+      toast({ title: "תנועה עודכנה בהצלחה", description: "פרטי התנועה עודכנו" });
     } else {
       const newTransaction: Omit<FinancialTransaction, "id"> = {
-        userId,
         ...formData,
+        userId,
       };
       const docRef = await addDoc(collection(db, "finances"), newTransaction);
       setTransactions([...transactions, { id: docRef.id, ...newTransaction }]);
-      toast({
-        title: "תנועה נוספה בהצלחה",
-        description: `התנועה נוספה לרשימה`,
-      });
+      toast({ title: "תנועה נוספה בהצלחה", description: "התנועה נוספה לרשימה" });
     }
-
     setIsDialogOpen(false);
     setSelectedTransaction(null);
   };
@@ -132,9 +111,9 @@ export default function FinancesPage() {
     {
       header: "סוג תנועה",
       accessorKey: "type" as keyof FinancialTransaction,
-      cell: (transaction: FinancialTransaction) => (
-        <Badge variant={transaction.type === "income" ? "default" : "destructive"}>
-          {transaction.type === "income" ? "הכנסה" : "הוצאה"}
+      cell: (row: FinancialTransaction) => (
+        <Badge variant={row.type === "income" ? "default" : "destructive"}>
+          {row.type === "income" ? "הכנסה" : "הוצאה"}
         </Badge>
       ),
     },
@@ -145,9 +124,9 @@ export default function FinancesPage() {
     {
       header: "סכום",
       accessorKey: "amount" as keyof FinancialTransaction,
-      cell: (transaction: FinancialTransaction) => (
-        <span className={transaction.type === "income" ? "text-green-600" : "text-red-600"}>
-          {formatCurrency(transaction.amount)}
+      cell: (row: FinancialTransaction) => (
+        <span className={row.type === "income" ? "text-green-600" : "text-red-600"}>
+          {formatCurrency(row.amount)}
         </span>
       ),
     },
@@ -159,7 +138,7 @@ export default function FinancesPage() {
 
   const actionColumn = (transaction: FinancialTransaction) => (
     <div className="flex space-x-2 justify-end">
-      <Button variant="ghost" size="icon" onClick={() => handleEdit(transaction)}>
+      <Button variant="ghost" size="icon" onClick={() => setSelectedTransaction(transaction)}>
         <Pencil className="h-4 w-4" />
       </Button>
       <Button variant="ghost" size="icon" onClick={() => handleDelete(transaction)}>
@@ -175,10 +154,68 @@ export default function FinancesPage() {
           <DollarSign className="h-5 w-5" />
           <h1 className="text-xl font-bold">ניהול פיננסי</h1>
         </div>
-        {/* ... כל הקוד הקיים של הדיאלוג נשמר ללא שינוי */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-[#0b3d2e] hover:bg-[#0b3d2e]/90" onClick={() => setSelectedTransaction(null)}>
+              <Plus className="h-4 w-4 ml-2" /> הוספת תנועה
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>{selectedTransaction ? 'עריכת תנועה' : 'הוספת תנועה פיננסית'}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleSave({
+                date: formData.get('date'),
+                type: formData.get('type'),
+                category: formData.get('category'),
+                amount: Number(formData.get('amount')),
+                description: formData.get('description'),
+              });
+            }} className="space-y-4">
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="date">תאריך</Label>
+                  <div className="relative">
+                    <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input id="date" name="date" type="date" className="pr-10" defaultValue={selectedTransaction?.date} />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="type">סוג תנועה</Label>
+                  <Select name="type" defaultValue={selectedTransaction?.type}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="בחר סוג תנועה" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="income">הכנסה</SelectItem>
+                      <SelectItem value="expense">הוצאה</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="category">קטגוריה</Label>
+                  <Input id="category" name="category" defaultValue={selectedTransaction?.category} placeholder="הזן קטגוריה" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="amount">סכום</Label>
+                  <Input id="amount" name="amount" type="number" defaultValue={selectedTransaction?.amount} placeholder="הזן סכום" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">תיאור</Label>
+                  <Textarea id="description" name="description" defaultValue={selectedTransaction?.description} placeholder="הזן תיאור" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>ביטול</Button>
+                <Button type="submit" className="bg-[#0b3d2e] hover:bg-[#0b3d2e]/90">שמירה</Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
-
-      {/* ... שאר האלמנטים נשמרים ללא שינוי */}
 
       <Tabs defaultValue="all" onValueChange={(value) => setFilterType(value as any)}>
         <TabsList className="mb-4">
@@ -187,34 +224,13 @@ export default function FinancesPage() {
           <TabsTrigger value="expense">הוצאות</TabsTrigger>
         </TabsList>
         <TabsContent value="all">
-          <DataTable
-            data={filteredTransactions}
-            columns={columns}
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["category", "description"]}
-            emptyMessage="לא נמצאו תנועות פיננסיות"
-          />
+          <DataTable data={filteredTransactions} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["category", "description"]} emptyMessage="לא נמצאו תנועות פיננסיות" />
         </TabsContent>
         <TabsContent value="income">
-          <DataTable
-            data={filteredTransactions}
-            columns={columns}
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["category", "description"]}
-            emptyMessage="לא נמצאו הכנסות"
-          />
+          <DataTable data={filteredTransactions} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["category", "description"]} emptyMessage="לא נמצאו הכנסות" />
         </TabsContent>
         <TabsContent value="expense">
-          <DataTable
-            data={filteredTransactions}
-            columns={columns}
-            actionColumn={actionColumn}
-            searchable={true}
-            searchKeys={["category", "description"]}
-            emptyMessage="לא נמצאו הוצאות"
-          />
+          <DataTable data={filteredTransactions} columns={columns} actionColumn={actionColumn} searchable={true} searchKeys={["category", "description"]} emptyMessage="לא נמצאו הוצאות" />
         </TabsContent>
       </Tabs>
     </div>
