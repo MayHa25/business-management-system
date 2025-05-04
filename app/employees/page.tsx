@@ -1,14 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  collection,
+  getDocs,
+  addDoc,
+  deleteDoc,
+  updateDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+
 import { UserCog, Plus, Pencil, Trash } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
-import { DUMMY_EMPLOYEES, Employee } from "@/lib/constants";
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
+import { Employee } from "@/lib/constants";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
@@ -17,21 +30,34 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<Employee[]>(DUMMY_EMPLOYEES);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) return;
+      setUserId(user.uid);
+
+      const q = query(collection(db, "employees"), where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
+      setEmployees(data);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(amount);
   };
 
-  const handleDelete = (employee: Employee) => {
+  const handleDelete = async (employee: Employee) => {
+    await deleteDoc(doc(db, "employees", employee.id));
     setEmployees(employees.filter(e => e.id !== employee.id));
-    toast({
-      title: "עובד נמחק בהצלחה",
-      description: `${employee.name} הוסר מרשימת העובדים`,
-    });
+    toast({ title: "עובד נמחק בהצלחה", description: `${employee.name} הוסר מרשימת העובדים` });
   };
 
   const handleEdit = (employee: Employee) => {
@@ -39,51 +65,36 @@ export default function EmployeesPage() {
     setIsDialogOpen(true);
   };
 
-  const handleSave = (formData: any) => {
+  const handleSave = async (formData: any) => {
+    if (!userId) return;
+
     if (selectedEmployee) {
-      // Edit existing employee
-      setEmployees(employees.map(employee => 
-        employee.id === selectedEmployee.id 
-          ? { ...employee, ...formData }
-          : employee
-      ));
-      toast({
-        title: "עובד עודכן בהצלחה",
-        description: `הפרטים של ${formData.name} עודכנו`,
-      });
-    } else {
-      // Add new employee
-      const newEmployee: Employee = {
-        id: Math.random().toString(36).substr(2, 9),
+      const ref = doc(db, "employees", selectedEmployee.id);
+      await updateDoc(ref, {
         ...formData,
-      };
-      setEmployees([...employees, newEmployee]);
-      toast({
-        title: "עובד נוסף בהצלחה",
-        description: `${formData.name} נוסף לרשימת העובדים`,
+        userId,
       });
+      setEmployees(employees.map(e => e.id === selectedEmployee.id ? { ...e, ...formData } : e));
+      toast({ title: "עובד עודכן בהצלחה", description: `הפרטים של ${formData.name} עודכנו` });
+    } else {
+      const newEmployee: Omit<Employee, "id"> = {
+        ...formData,
+        userId,
+      };
+      const docRef = await addDoc(collection(db, "employees"), newEmployee);
+      setEmployees([...employees, { id: docRef.id, ...newEmployee }]);
+      toast({ title: "עובד נוסף בהצלחה", description: `${formData.name} נוסף לרשימת העובדים` });
     }
+
     setIsDialogOpen(false);
     setSelectedEmployee(null);
   };
 
   const columns = [
-    {
-      header: "שם מלא",
-      accessorKey: "name" as keyof Employee,
-    },
-    {
-      header: "תפקיד",
-      accessorKey: "position" as keyof Employee,
-    },
-    {
-      header: "טלפון",
-      accessorKey: "phone" as keyof Employee,
-    },
-    {
-      header: "אימייל",
-      accessorKey: "email" as keyof Employee,
-    },
+    { header: "שם מלא", accessorKey: "name" as keyof Employee },
+    { header: "תפקיד", accessorKey: "position" as keyof Employee },
+    { header: "טלפון", accessorKey: "phone" as keyof Employee },
+    { header: "אימייל", accessorKey: "email" as keyof Employee },
     {
       header: "שכר חודשי",
       accessorKey: "monthlySalary" as keyof Employee,
@@ -123,60 +134,33 @@ export default function EmployeesPage() {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
               handleSave({
-                name: formData.get('name'),
-                position: formData.get('position'),
-                phone: formData.get('phone'),
-                email: formData.get('email'),
-                monthlySalary: Number(formData.get('monthlySalary')),
+                name: formData.get("name"),
+                position: formData.get("position"),
+                phone: formData.get("phone"),
+                email: formData.get("email"),
+                monthlySalary: Number(formData.get("monthlySalary")),
               });
             }} className="space-y-4">
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">שם מלא</Label>
-                  <Input 
-                    id="name" 
-                    name="name"
-                    defaultValue={selectedEmployee?.name}
-                    placeholder="הזן שם מלא" 
-                  />
+                  <Input id="name" name="name" defaultValue={selectedEmployee?.name} placeholder="הזן שם מלא" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="position">תפקיד</Label>
-                  <Input 
-                    id="position" 
-                    name="position"
-                    defaultValue={selectedEmployee?.position}
-                    placeholder="הזן תפקיד" 
-                  />
+                  <Input id="position" name="position" defaultValue={selectedEmployee?.position} placeholder="הזן תפקיד" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="phone">טלפון</Label>
-                  <Input 
-                    id="phone" 
-                    name="phone"
-                    defaultValue={selectedEmployee?.phone}
-                    placeholder="הזן מספר טלפון" 
-                  />
+                  <Input id="phone" name="phone" defaultValue={selectedEmployee?.phone} placeholder="הזן מספר טלפון" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="email">אימייל</Label>
-                  <Input 
-                    id="email" 
-                    name="email"
-                    type="email"
-                    defaultValue={selectedEmployee?.email}
-                    placeholder="הזן כתובת אימייל" 
-                  />
+                  <Input id="email" name="email" type="email" defaultValue={selectedEmployee?.email} placeholder="הזן כתובת אימייל" />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="monthlySalary">שכר חודשי</Label>
-                  <Input 
-                    id="monthlySalary" 
-                    name="monthlySalary"
-                    type="number"
-                    defaultValue={selectedEmployee?.monthlySalary}
-                    placeholder="הזן שכר חודשי" 
-                  />
+                  <Input id="monthlySalary" name="monthlySalary" type="number" defaultValue={selectedEmployee?.monthlySalary} placeholder="הזן שכר חודשי" />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -195,9 +179,9 @@ export default function EmployeesPage() {
         </p>
       </div>
 
-      <DataTable 
-        data={employees} 
-        columns={columns} 
+      <DataTable
+        data={employees}
+        columns={columns}
         actionColumn={actionColumn}
         searchable={true}
         searchKeys={["name", "position", "email"]}

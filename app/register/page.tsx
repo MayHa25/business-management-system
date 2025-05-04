@@ -48,7 +48,6 @@ export default function RegisterPage() {
 
       const user = userCredential.user;
 
-      // שמירת פרטים נוספים במסד הנתונים
       await setDoc(doc(db, "users", user.uid), {
         full_name: data.fullName,
         business_name: data.businessName,
@@ -63,11 +62,11 @@ export default function RegisterPage() {
       });
 
       router.push("/");
-    } catch (error) {
+    } catch (error: any) {
       toast({
         variant: "destructive",
         title: "שגיאה בהרשמה",
-        description: "אנא נסה שנית מאוחר יותר",
+        description: error.message || "אירעה שגיאה לא ידועה",
       });
     } finally {
       setIsLoading(false);
