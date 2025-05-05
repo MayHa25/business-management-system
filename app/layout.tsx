@@ -4,6 +4,7 @@ import { Rubik } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import MainLayout from '@/components/layouts/main-layout';
+import FCMNotifications from '@/components/ui/fcm-notifications'; // ✅ הוספה כאן
 
 const rubik = Rubik({ 
   subsets: ['hebrew', 'latin'],
@@ -38,6 +39,7 @@ export default function RootLayout({
           <MainLayout>
             {children}
           </MainLayout>
+          <FCMNotifications /> {/* ✅ זה מה שצריך */}
           <Toaster />
         </ThemeProvider>
       </body>

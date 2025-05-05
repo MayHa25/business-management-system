@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, onMessage, getToken, Messaging } from "firebase/messaging";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCR_HBolUKab92805Sj6Py5xcRMuZk0Ams",
@@ -16,3 +17,14 @@ const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// הגדרה וקבלת FCM רק אם אנחנו בדפדפן
+export let messaging: Messaging | null = null;
+
+if (typeof window !== "undefined" && "Notification" in window) {
+  try {
+    messaging = getMessaging(app);
+  } catch (error) {
+    console.error("שגיאה בהגדרת messaging:", error);
+  }
+}
