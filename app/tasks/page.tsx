@@ -1,3 +1,5 @@
+// כל ההתחלה אותו דבר, רק שים לב לשינויים שציינתי בהמשך (מסומן בתגובות)
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -72,36 +74,40 @@ export default function TasksPage() {
       return;
     }
 
+    const taskData = {
+      name: formData.get("name"),
+      dueDate: formData.get("dueDate"),
+      repeat: formData.get("repeat"),
+    };
+
     if (selectedTask) {
-      // עריכת משימה קיימת
       await updateDoc(doc(db, "tasks", selectedTask.id), {
-        ...formData,
+        ...taskData,
         status: selectedTask.status,
       });
 
       setTasks(tasks.map(task =>
         task.id === selectedTask.id
-          ? { ...task, ...formData }
+          ? { ...task, ...taskData }
           : task
       ));
 
       toast({
         title: "משימה עודכנה בהצלחה",
-        description: `הפרטים של ${formData.name} עודכנו`,
+        description: `הפרטים של ${taskData.name} עודכנו`,
       });
     } else {
-      // יצירת משימה חדשה
       const docRef = await addDoc(collection(db, "tasks"), {
-        ...formData,
+        ...taskData,
         status: 'open',
         userId: user.uid,
       });
 
-      setTasks([...tasks, { id: docRef.id, ...formData, status: 'open' }]);
+      setTasks([...tasks, { id: docRef.id, ...taskData, status: 'open' }]);
 
       toast({
         title: "משימה נוספה בהצלחה",
-        description: `${formData.name} נוספה לרשימת המשימות`,
+        description: `${taskData.name} נוספה לרשימת המשימות`,
       });
     }
 
@@ -130,6 +136,20 @@ export default function TasksPage() {
     {
       header: "תאריך יעד",
       accessorKey: "dueDate" as keyof Task,
+    },
+    {
+      header: "חזרה",
+      accessorKey: "repeat" as keyof Task,
+      cell: (task: Task) => {
+        const labels: Record<string, string> = {
+          none: "ללא",
+          daily: "יומי",
+          weekly: "שבועי",
+          monthly: "חודשי",
+          yearly: "שנתי",
+        };
+        return labels[task.repeat || "none"] || "ללא";
+      },
     },
     {
       header: "סטטוס",
@@ -179,14 +199,14 @@ export default function TasksPage() {
             <DialogHeader>
               <DialogTitle>{selectedTask ? 'עריכת משימה' : 'הוספת משימה חדשה'}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              handleSave({
-                name: formData.get('name'),
-                dueDate: formData.get('dueDate'),
-              });
-            }} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                handleSave(formData);
+              }}
+              className="space-y-4"
+            >
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name">שם משימה</Label>
@@ -205,6 +225,21 @@ export default function TasksPage() {
                     type="date"
                     defaultValue={selectedTask?.dueDate}
                   />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="repeat">חזרה</Label>
+                  <select
+                    id="repeat"
+                    name="repeat"
+                    defaultValue={selectedTask?.repeat || "none"}
+                    className="border rounded px-3 py-2"
+                  >
+                    <option value="none">ללא חזרה</option>
+                    <option value="daily">יומי</option>
+                    <option value="weekly">שבועי</option>
+                    <option value="monthly">חודשי</option>
+                    <option value="yearly">שנתי</option>
+                  </select>
                 </div>
               </div>
               <div className="flex justify-end gap-2">

@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   collection,
-  getDocs,
   addDoc,
   deleteDoc,
   updateDoc,
   doc,
   query,
   where,
+  onSnapshot,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -48,57 +48,60 @@ export default function FinancesPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (!user) return;
       setUserId(user.uid);
 
       const q = query(collection(db, "finances"), where("userId", "==", user.uid));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FinancialTransaction[];
-      setTransactions(data);
+      const unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+        const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })) as FinancialTransaction[];
+        setTransactions(data);
+      });
+
+      return () => unsubscribeSnapshot();
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
-  const filteredTransactions = transactions.filter(transaction => {
-    if (filterType === "all") return true;
-    return transaction.type === filterType;
-  });
+  const filteredTransactions = transactions.filter((transaction) =>
+    filterType === "all" ? true : transaction.type === filterType
+  );
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("he-IL", { style: "currency", currency: "ILS" }).format(amount);
+    return new Intl.NumberFormat("he-IL", {
+      style: "currency",
+      currency: "ILS",
+    }).format(amount);
   };
 
   const handleDelete = async (transaction: FinancialTransaction) => {
     if (!transaction.id) return;
     await deleteDoc(doc(db, "finances", transaction.id));
-    setTransactions(transactions.filter(t => t.id !== transaction.id));
     toast({ title: "תנועה נמחקה בהצלחה", description: "התנועה הוסרה מהרשימה" });
   };
 
   const handleSave = async (formData: any) => {
     if (!userId) return;
 
+    const payload: Omit<FinancialTransaction, "id"> = {
+      date: formData.date,
+      type: formData.type,
+      category: formData.category,
+      amount: Number(formData.amount),
+      description: formData.description,
+      userId,
+    };
+
     if (selectedTransaction) {
       const ref = doc(db, "finances", selectedTransaction.id);
-      await updateDoc(ref, {
-        ...formData,
-        userId,
-      });
-      setTransactions(transactions.map(transaction =>
-        transaction.id === selectedTransaction.id ? { ...transaction, ...formData } : transaction
-      ));
+      await updateDoc(ref, payload);
       toast({ title: "תנועה עודכנה בהצלחה", description: "פרטי התנועה עודכנו" });
     } else {
-      const newTransaction: Omit<FinancialTransaction, "id"> = {
-        ...formData,
-        userId,
-      };
-      const docRef = await addDoc(collection(db, "finances"), newTransaction);
-      setTransactions([...transactions, { id: docRef.id, ...newTransaction }]);
+      const docRef = await addDoc(collection(db, "finances"), payload);
       toast({ title: "תנועה נוספה בהצלחה", description: "התנועה נוספה לרשימה" });
     }
+
     setIsDialogOpen(false);
     setSelectedTransaction(null);
   };
@@ -138,7 +141,14 @@ export default function FinancesPage() {
 
   const actionColumn = (transaction: FinancialTransaction) => (
     <div className="flex space-x-2 justify-end">
-      <Button variant="ghost" size="icon" onClick={() => setSelectedTransaction(transaction)}>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={() => {
+          setSelectedTransaction(transaction);
+          setIsDialogOpen(true);
+        }}
+      >
         <Pencil className="h-4 w-4" />
       </Button>
       <Button variant="ghost" size="icon" onClick={() => handleDelete(transaction)}>
@@ -162,25 +172,34 @@ export default function FinancesPage() {
           </DialogTrigger>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>{selectedTransaction ? 'עריכת תנועה' : 'הוספת תנועה פיננסית'}</DialogTitle>
+              <DialogTitle>{selectedTransaction ? "עריכת תנועה" : "הוספת תנועה פיננסית"}</DialogTitle>
             </DialogHeader>
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              handleSave({
-                date: formData.get('date'),
-                type: formData.get('type'),
-                category: formData.get('category'),
-                amount: Number(formData.get('amount')),
-                description: formData.get('description'),
-              });
-            }} className="space-y-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                handleSave({
+                  date: formData.get("date"),
+                  type: formData.get("type"),
+                  category: formData.get("category"),
+                  amount: formData.get("amount"),
+                  description: formData.get("description"),
+                });
+              }}
+              className="space-y-4"
+            >
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="date">תאריך</Label>
                   <div className="relative">
                     <Calendar className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input id="date" name="date" type="date" className="pr-10" defaultValue={selectedTransaction?.date} />
+                    <Input
+                      id="date"
+                      name="date"
+                      type="date"
+                      className="pr-10"
+                      defaultValue={selectedTransaction?.date}
+                    />
                   </div>
                 </div>
                 <div className="grid gap-2">
@@ -197,20 +216,40 @@ export default function FinancesPage() {
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="category">קטגוריה</Label>
-                  <Input id="category" name="category" defaultValue={selectedTransaction?.category} placeholder="הזן קטגוריה" />
+                  <Input
+                    id="category"
+                    name="category"
+                    defaultValue={selectedTransaction?.category}
+                    placeholder="הזן קטגוריה"
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="amount">סכום</Label>
-                  <Input id="amount" name="amount" type="number" defaultValue={selectedTransaction?.amount} placeholder="הזן סכום" />
+                  <Input
+                    id="amount"
+                    name="amount"
+                    type="number"
+                    defaultValue={selectedTransaction?.amount}
+                    placeholder="הזן סכום"
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="description">תיאור</Label>
-                  <Textarea id="description" name="description" defaultValue={selectedTransaction?.description} placeholder="הזן תיאור" />
+                  <Textarea
+                    id="description"
+                    name="description"
+                    defaultValue={selectedTransaction?.description}
+                    placeholder="הזן תיאור"
+                  />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>ביטול</Button>
-                <Button type="submit" className="bg-[#0b3d2e] hover:bg-[#0b3d2e]/90">שמירה</Button>
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+                  ביטול
+                </Button>
+                <Button type="submit" className="bg-[#0b3d2e] hover:bg-[#0b3d2e]/90">
+                  שמירה
+                </Button>
               </div>
             </form>
           </DialogContent>

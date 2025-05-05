@@ -102,6 +102,17 @@ export default function InventoryPage() {
       };
       const docRef = await addDoc(collection(db, "inventory"), newItem);
       setInventory([...inventory, { id: docRef.id, ...newItem }]);
+
+      // ✅ הוספת תנועה פיננסית אוטומטית עבור רכישת מלאי
+      await addDoc(collection(db, "finances"), {
+        userId,
+        date: new Date().toISOString().split("T")[0],
+        type: "expense",
+        category: "מלאי",
+        amount: newItem.unitPrice * newItem.quantity,
+        description: `רכישת מלאי: ${newItem.name}`,
+      });
+
       toast({
         title: "פריט נוסף בהצלחה",
         description: `${formData.name} נוסף למלאי`,

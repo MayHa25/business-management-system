@@ -81,9 +81,19 @@ export default function OrdersPage() {
     toast({ title: "הזמנה נמחקה", description: `הזמנה ${order.orderNumber} הוסרה.` });
   };
 
-  const handleEdit = (order: Order) => {
-    setSelectedOrder(order);
-    setIsDialogOpen(true);
+  const addFinanceRecord = async (order: Order) => {
+    if (!userId) return;
+
+    const transaction = {
+      date: order.orderDate,
+      type: "income",
+      category: "הזמנות",
+      amount: order.totalAmount,
+      description: `הזמנה ${order.orderNumber} עבור ${order.client}`,
+      userId,
+    };
+
+    await addDoc(collection(db, "finances"), transaction);
   };
 
   const handleSave = async (formData: any) => {
@@ -95,13 +105,14 @@ export default function OrdersPage() {
       setOrders(orders.map((o) => (o.id === selectedOrder.id ? { ...o, ...formData } : o)));
       toast({ title: "הזמנה עודכנה", description: `הזמנה ${formData.orderNumber} עודכנה.` });
     } else {
-      const newOrder: Omit<Order, "id"> = {
+      const newOrder = {
         orderNumber: `ORD-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000).toString().padStart(3, "0")}`,
         userId,
         ...formData,
-      };
+      };      
       const docRef = await addDoc(collection(db, "orders"), newOrder);
       setOrders([...orders, { id: docRef.id, ...newOrder }]);
+      await addFinanceRecord(newOrder); // ✅ הוספה אוטומטית לפיננסים
       toast({ title: "הזמנה נוספה", description: `הזמנה ${newOrder.orderNumber} נוספה.` });
     }
 
@@ -138,6 +149,11 @@ export default function OrdersPage() {
       <Button variant="ghost" size="icon" onClick={() => handleDelete(order)}><Trash className="h-4 w-4" /></Button>
     </div>
   );
+
+  const handleEdit = (order: Order) => {
+    setSelectedOrder(order);
+    setIsDialogOpen(true);
+  };
 
   return (
     <div className="space-y-4">

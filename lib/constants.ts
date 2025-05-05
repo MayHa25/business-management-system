@@ -14,6 +14,7 @@ export interface FinancialTransaction {
   category: string;
   amount: number;
   description: string;
+  userId: string;
 }
 
 export interface InventoryItem {
@@ -30,6 +31,7 @@ export interface Task {
   name: string;
   dueDate: string;
   status: 'open' | 'closed';
+  repeat?: "none" | "daily" | "weekly" | "monthly" | "yearly" ;
 }
 
 export interface Order {
@@ -101,6 +103,7 @@ export const DUMMY_TRANSACTIONS: FinancialTransaction[] = [
     category: 'מכירות',
     amount: 5000,
     description: 'תשלום עבור פרויקט עיצוב',
+    userId: 'demo-user'
   },
   {
     id: '2',
@@ -109,6 +112,7 @@ export const DUMMY_TRANSACTIONS: FinancialTransaction[] = [
     category: 'ציוד משרדי',
     amount: 750,
     description: 'רכישת מדפסת חדשה',
+    userId: 'demo-user'
   },
   {
     id: '3',
@@ -117,6 +121,7 @@ export const DUMMY_TRANSACTIONS: FinancialTransaction[] = [
     category: 'שירותים',
     amount: 3200,
     description: 'ייעוץ עסקי ללקוח',
+    userId: 'demo-user'
   },
   {
     id: '4',
@@ -125,6 +130,7 @@ export const DUMMY_TRANSACTIONS: FinancialTransaction[] = [
     category: 'שכירות',
     amount: 4500,
     description: 'שכירות משרד חודשית',
+    userId: 'demo-user'
   },
   {
     id: '5',
@@ -133,6 +139,7 @@ export const DUMMY_TRANSACTIONS: FinancialTransaction[] = [
     category: 'מכירות',
     amount: 6800,
     description: 'פרויקט פיתוח אתר',
+    userId: 'demo-user'
   },
 ];
 
