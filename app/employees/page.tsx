@@ -28,7 +28,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 export default function EmployeesPage() {
@@ -36,8 +42,8 @@ export default function EmployeesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [shiftTimers, setShiftTimers] = useState<Record<string, number>>(JSON.parse(localStorage.getItem("shiftTimers") || "{}"));
-  const [activeShifts, setActiveShifts] = useState<Record<string, number>>(JSON.parse(localStorage.getItem("activeShifts") || "{}"));
+  const [shiftTimers, setShiftTimers] = useState<Record<string, number>>({});
+  const [activeShifts, setActiveShifts] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -55,7 +61,9 @@ export default function EmployeesPage() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("activeShifts", JSON.stringify(activeShifts));
+    if (typeof window !== "undefined") {
+      localStorage.setItem("activeShifts", JSON.stringify(activeShifts));
+    }
   }, [activeShifts]);
 
   const formatCurrency = (amount: number) => {
@@ -92,7 +100,6 @@ export default function EmployeesPage() {
       setEmployees(employees.map(e => e.id === selectedEmployee.id ? { ...e, ...dataToSave } : e));
       toast({ title: "עובד עודכן בהצלחה", description: `הפרטים של ${dataToSave.name} עודכנו` });
 
-      // עדכון הוצאה לפיננסים
       if (dataToSave.salaryType === "monthly") {
         await addDoc(collection(db, "finances"), {
           date: new Date().toISOString().split('T')[0],
