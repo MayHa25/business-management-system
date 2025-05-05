@@ -50,6 +50,9 @@ export interface Employee {
   phone: string;
   email: string;
   monthlySalary: number;
+  salaryType?: "monthly" | "hourly";
+  hourlyRate?: number;
+  userId: string;
 }
 
 export const DUMMY_CLIENTS: Client[] = [
@@ -270,6 +273,7 @@ export const DUMMY_EMPLOYEES: Employee[] = [
     phone: '050-9876543',
     email: 'aviv@example.com',
     monthlySalary: 15000,
+    userId: "demo-user-id",
   },
   {
     id: '2',
@@ -278,6 +282,7 @@ export const DUMMY_EMPLOYEES: Employee[] = [
     phone: '052-1234567',
     email: 'noa@example.com',
     monthlySalary: 12000,
+    userId: "demo-user-id",
   },
   {
     id: '3',
@@ -286,6 +291,7 @@ export const DUMMY_EMPLOYEES: Employee[] = [
     phone: '054-5556666',
     email: 'yuval@example.com',
     monthlySalary: 18000,
+    userId: "demo-user-id",
   },
   {
     id: '4',
@@ -294,6 +300,7 @@ export const DUMMY_EMPLOYEES: Employee[] = [
     phone: '053-7778888',
     email: 'shira@example.com',
     monthlySalary: 14000,
+    userId: "demo-user-id",
   },
   {
     id: '5',
@@ -302,5 +309,6 @@ export const DUMMY_EMPLOYEES: Employee[] = [
     phone: '058-3332222',
     email: 'omer@example.com',
     monthlySalary: 10000,
+    userId: "demo-user-id",
   },
 ];

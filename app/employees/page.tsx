@@ -10,6 +10,7 @@ import {
   doc,
   query,
   where,
+  serverTimestamp,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "@/lib/firebase";
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
 export default function EmployeesPage() {
@@ -34,6 +36,8 @@ export default function EmployeesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [shiftTimers, setShiftTimers] = useState<Record<string, number>>(JSON.parse(localStorage.getItem("shiftTimers") || "{}"));
+  const [activeShifts, setActiveShifts] = useState<Record<string, number>>(JSON.parse(localStorage.getItem("activeShifts") || "{}"));
   const { toast } = useToast();
 
   useEffect(() => {
@@ -49,6 +53,10 @@ export default function EmployeesPage() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("activeShifts", JSON.stringify(activeShifts));
+  }, [activeShifts]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('he-IL', { style: 'currency', currency: 'ILS' }).format(amount);
@@ -68,26 +76,83 @@ export default function EmployeesPage() {
   const handleSave = async (formData: any) => {
     if (!userId) return;
 
+    const dataToSave = {
+      name: formData.get("name"),
+      position: formData.get("position"),
+      phone: formData.get("phone"),
+      email: formData.get("email"),
+      salaryType: formData.get("salaryType"),
+      monthlySalary: formData.get("salaryType") === "monthly" ? Number(formData.get("monthlySalary")) : 0,
+      hourlyRate: formData.get("salaryType") === "hourly" ? Number(formData.get("hourlyRate")) : 0,
+    };
+
     if (selectedEmployee) {
       const ref = doc(db, "employees", selectedEmployee.id);
-      await updateDoc(ref, {
-        ...formData,
-        userId,
-      });
-      setEmployees(employees.map(e => e.id === selectedEmployee.id ? { ...e, ...formData } : e));
-      toast({ title: "עובד עודכן בהצלחה", description: `הפרטים של ${formData.name} עודכנו` });
+      await updateDoc(ref, { ...dataToSave, userId });
+      setEmployees(employees.map(e => e.id === selectedEmployee.id ? { ...e, ...dataToSave } : e));
+      toast({ title: "עובד עודכן בהצלחה", description: `הפרטים של ${dataToSave.name} עודכנו` });
+
+      // עדכון הוצאה לפיננסים
+      if (dataToSave.salaryType === "monthly") {
+        await addDoc(collection(db, "finances"), {
+          date: new Date().toISOString().split('T')[0],
+          type: "expense",
+          category: "משכורת",
+          amount: dataToSave.monthlySalary,
+          description: `שכר חודשי עבור ${dataToSave.name}`,
+          userId,
+        });
+      }
     } else {
       const newEmployee: Omit<Employee, "id"> = {
-        ...formData,
+        ...dataToSave,
         userId,
       };
       const docRef = await addDoc(collection(db, "employees"), newEmployee);
       setEmployees([...employees, { id: docRef.id, ...newEmployee }]);
-      toast({ title: "עובד נוסף בהצלחה", description: `${formData.name} נוסף לרשימת העובדים` });
+      toast({ title: "עובד נוסף בהצלחה", description: `${dataToSave.name} נוסף לרשימת העובדים` });
+
+      if (dataToSave.salaryType === "monthly") {
+        await addDoc(collection(db, "finances"), {
+          date: new Date().toISOString().split('T')[0],
+          type: "expense",
+          category: "משכורת",
+          amount: dataToSave.monthlySalary,
+          description: `שכר חודשי עבור ${dataToSave.name}`,
+          userId,
+        });
+      }
     }
 
     setIsDialogOpen(false);
     setSelectedEmployee(null);
+  };
+
+  const handleToggleShift = async (employee: Employee) => {
+    const isActive = !!activeShifts[employee.id];
+    if (isActive) {
+      const startTime = activeShifts[employee.id];
+      const endTime = Date.now();
+      const hoursWorked = (endTime - startTime) / (1000 * 60 * 60);
+      const earned = Number((employee.hourlyRate || 0) * hoursWorked);
+
+      await addDoc(collection(db, "finances"), {
+        date: new Date().toISOString().split('T')[0],
+        type: "expense",
+        category: "משכורת",
+        amount: earned,
+        description: `משכורת לפי שעה עבור ${employee.name}`,
+        userId,
+      });
+
+      toast({ title: "משמרת הסתיימה", description: `${employee.name} עבד/ה ${hoursWorked.toFixed(2)} שעות` });
+
+      const newActive = { ...activeShifts };
+      delete newActive[employee.id];
+      setActiveShifts(newActive);
+    } else {
+      setActiveShifts({ ...activeShifts, [employee.id]: Date.now() });
+    }
   };
 
   const columns = [
@@ -95,10 +160,37 @@ export default function EmployeesPage() {
     { header: "תפקיד", accessorKey: "position" as keyof Employee },
     { header: "טלפון", accessorKey: "phone" as keyof Employee },
     { header: "אימייל", accessorKey: "email" as keyof Employee },
+    { header: "סוג שכר", accessorKey: "salaryType" as keyof Employee },
     {
-      header: "שכר חודשי",
+      header: "שכר",
       accessorKey: "monthlySalary" as keyof Employee,
-      cell: (employee: Employee) => formatCurrency(employee.monthlySalary),
+      cell: (employee: Employee) => (
+        employee.salaryType === "monthly"
+          ? formatCurrency(employee.monthlySalary)
+          : formatCurrency(employee.hourlyRate || 0) + " לשעה"
+      )
+    },
+    {
+      header: "משמרת",
+      accessorKey: "shift" as keyof Employee,
+      cell: (employee: Employee) => (
+        employee.salaryType === "hourly" ? (
+          <div className="flex flex-col gap-1">
+            <Button
+              className="text-xs"
+              variant="outline"
+              onClick={() => handleToggleShift(employee)}
+            >
+              {activeShifts[employee.id] ? `סיים משמרת (${Math.floor((Date.now() - activeShifts[employee.id]) / 1000 / 60)} דק')` : "התחל משמרת"}
+            </Button>
+            {activeShifts[employee.id] && (
+              <span className="text-xs text-gray-500">
+                {Math.floor((Date.now() - activeShifts[employee.id]) / 1000)} שניות פעילות
+              </span>
+            )}
+          </div>
+        ) : null
+      )
     },
   ];
 
@@ -133,13 +225,7 @@ export default function EmployeesPage() {
             <form onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
-              handleSave({
-                name: formData.get("name"),
-                position: formData.get("position"),
-                phone: formData.get("phone"),
-                email: formData.get("email"),
-                monthlySalary: Number(formData.get("monthlySalary")),
-              });
+              handleSave(formData);
             }} className="space-y-4">
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
@@ -159,8 +245,24 @@ export default function EmployeesPage() {
                   <Input id="email" name="email" type="email" defaultValue={selectedEmployee?.email} placeholder="הזן כתובת אימייל" />
                 </div>
                 <div className="grid gap-2">
+                  <Label htmlFor="salaryType">סוג שכר</Label>
+                  <Select name="salaryType" defaultValue={selectedEmployee?.salaryType || "monthly"}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="בחר סוג שכר" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="monthly">חודשי</SelectItem>
+                      <SelectItem value="hourly">שעתי</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
                   <Label htmlFor="monthlySalary">שכר חודשי</Label>
                   <Input id="monthlySalary" name="monthlySalary" type="number" defaultValue={selectedEmployee?.monthlySalary} placeholder="הזן שכר חודשי" />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="hourlyRate">שכר לשעה</Label>
+                  <Input id="hourlyRate" name="hourlyRate" type="number" defaultValue={selectedEmployee?.hourlyRate} placeholder="הזן שכר לשעה" />
                 </div>
               </div>
               <div className="flex justify-end gap-2">
@@ -175,7 +277,7 @@ export default function EmployeesPage() {
       <div className="bg-white rounded-lg p-4 border shadow-sm mb-4">
         <h3 className="text-sm font-medium text-gray-500 mb-1">סה"כ הוצאות שכר חודשיות</h3>
         <p className="text-xl font-bold text-[#0b3d2e]">
-          {formatCurrency(employees.reduce((sum, employee) => sum + employee.monthlySalary, 0))}
+          {formatCurrency(employees.filter(e => e.salaryType === "monthly").reduce((sum, employee) => sum + employee.monthlySalary, 0))}
         </p>
       </div>
 
