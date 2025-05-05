@@ -23,6 +23,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="he" dir="rtl">
+      <head>
+        <link rel="icon" href="/icon-512.png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
+        <meta name="theme-color" content="#0b3d2e" />
+      </head>
       <body className={`${rubik.variable} font-sans`}>
         <ThemeProvider
           attribute="class"
