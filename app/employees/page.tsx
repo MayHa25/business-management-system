@@ -42,7 +42,6 @@ export default function EmployeesPage() {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [shiftTimers, setShiftTimers] = useState<Record<string, number>>({});
   const [activeShifts, setActiveShifts] = useState<Record<string, number>>({});
   const { toast } = useToast();
 
@@ -58,6 +57,15 @@ export default function EmployeesPage() {
     });
 
     return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedShifts = localStorage.getItem("activeShifts");
+      if (storedShifts) {
+        setActiveShifts(JSON.parse(storedShifts));
+      }
+    }
   }, []);
 
   useEffect(() => {
