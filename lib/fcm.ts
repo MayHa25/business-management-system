@@ -19,7 +19,7 @@ export async function requestNotificationPermission() {
     }
 
     const token = await getToken(messaging, {
-      vapidKey: "BK7V91YxjN66LTgYuYQfZ9_gkTh9YnoLBZMkOvi9RWq7u9ahtxoYvjDlZOUo6t5A9HBBuDZTZzn8Q7eHMPL4xZ0"
+      vapidKey: "BLANNfkFLvCbM9vNCFWRtUXUqniqL04QMIrD3FbiJANaHgcXisCC0G32JzHBY88VdfCaAIRaHVFlyvwhWZxaR_c"
     });
 
     if (token) {
